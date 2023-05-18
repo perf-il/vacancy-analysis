@@ -78,6 +78,19 @@ class HH:
                 id_from_page.append({int(employer['id']): employer['name']})
         return id_from_page
 
+    def get_name_employer_per_id(self, employer_id):
+        """
+        метод отправки запроса и получения информации с сайта https://api.hh.ru/employers по id компании
+        :param employer_id: id компании-работадателя
+        :return: строку с названием компании или сообщение что компания не найдена
+        """
+        url = f"https://api.hh.ru/employers/{employer_id}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.json().get('name')
+        else:
+            return f'Компания с ID {employer_id} не найдена'
+
     def select_employers_id(self, employers_list: list, pages=10):
         """
         метод для создания списка id компаний по выбранным ключевым словам
@@ -98,7 +111,7 @@ class DBManager:
 
     connect = psycopg2.connect(
         host="localhost",
-        database="HH_vacancies",
+        database="test_5",
         user="postgres",
         password="4444"
     )
@@ -112,7 +125,6 @@ class DBManager:
                                 f"(employer_id varchar(20) PRIMARY KEY,"
                                 f"employer_name varchar(120) NOT NULL)")
 
-            #connect.close()
             print('Table "all_employers_id" was created')
         except:
             print('Table "all_employers_id" already existing')
@@ -134,22 +146,35 @@ class DBManager:
                                         f"('{employer_id}', '{employer_name}');")
                         except:
                             continue
-        #connect.close()
         print('Table "all_employers_id" was updated')
 
     def create_table_selected_employers_id(self, connect=connect):
-        """метод создает таблицу 'selected_employers_id' из 'all_employers_id' по выбранным id"""
-        selected_id = ut.get_selected_employers_id()
-        str_selected_id = ut.get_str_from_list(selected_id)
-        try:
-            with connect:
+        """метод создает таблицу 'selected_employers_id'"""
+        with connect:
+            try:
                 with connect.cursor() as cur:
-                    cur.execute(f"CREATE TABLE selected_employers_id AS "
-                                f"SELECT * FROM all_employers_id WHERE employer_id in {str_selected_id};")
-            #connect.close()
-            print('Table "selected_employers_id" was created')
-        except:
-            print('Table "selected_employers_id" already existing')
+                    cur.execute(f"CREATE TABLE selected_employers_id\n"
+                                f"(employer_id varchar(20) PRIMARY KEY,"
+                                f"employer_name varchar(120) NOT NULL)")
+                print('Table "selected_employers_id" was created')
+            except:
+                print('Table "selected_employers_id" already existing')
+
+    def insert_table_selected_employers_id(self, connect=connect):
+        """заполняет таблицу 'selected_employers_id'"""
+        selected_id = ut.get_selected_employers_id()
+        hh = HH()
+        with connect:
+            with connect.cursor() as cur:
+                for num_id in selected_id:
+                    try:
+                        cur.execute(f"INSERT INTO selected_employers_id VALUES "
+                                        f"('{num_id}', '{hh.get_name_employer_per_id(num_id)}');")
+                    except:
+                        continue
+        print('Table "selected_employers_id" was updated')
+
+
 
     def get_selected_employers_id(self, connect=connect):
         """возвращает список id из таблиы 'selected_employers_id'"""
@@ -160,7 +185,16 @@ class DBManager:
                 for i in cur.fetchall():
                     for j in i:
                         result.append(j)
-        #connect.close()
+        return result
+
+    def get_selected_employers(self, connect=connect):
+        """возвращает список кортежей с id и названием компаний из таблиы 'selected_employers_id'"""
+        result = []
+        with connect:
+            with connect.cursor() as cur:
+                cur.execute(f"SELECT * FROM selected_employers_id;")
+                for i in cur.fetchall():
+                    result.append(i)
         return result
 
     def create_table_all_vacancies(self, connect=connect):
@@ -182,10 +216,9 @@ class DBManager:
                     print(f'Table "all_vacancies" was created')
                 except:
                     print(f'Table "all_vacancies" already existing')
-        #connect.close()
 
     def insert_data_to_all_vacancies(self, data: list, connect=connect):
-        """создает таблицу 'all_vacancies'"""
+        """заполняет таблицу 'all_vacancies'"""
         with connect:
             with connect.cursor() as cur:
                 for i in data:
@@ -209,7 +242,6 @@ class DBManager:
                     except:
                         continue
                 print(f'Table "all_vacancies" was updated')
-        #connect.close()
 
     def get_companies_and_vacancies_count(self, connect=connect):
         """получает список всех компаний и количество вакансий у каждой компании"""
@@ -217,7 +249,6 @@ class DBManager:
             with connect.cursor() as cur:
                 cur.execute("SELECT employer_name, COUNT(*) FROM all_vacancies GROUP BY employer_name")
                 result = cur.fetchall()
-        #connect.close()
         return result
 
     def get_all_vacancies(self, connect=connect):
@@ -227,7 +258,6 @@ class DBManager:
             with connect.cursor() as cur:
                 cur.execute("SELECT employer_name, name, salary_from, salary_to, url FROM all_vacancies")
                 result = cur.fetchall()
-        #connect.close()
         return result
 
     def get_avg_salary(self, connect=connect):
@@ -236,7 +266,6 @@ class DBManager:
             with connect.cursor() as cur:
                 cur.execute("SELECT salary_from, salary_to FROM all_vacancies")
                 result = cur.fetchall()
-        #connect.close()
         salary_list = []
         for pair in result:
             a, b = pair
@@ -255,7 +284,6 @@ class DBManager:
             with connect.cursor() as cur:
                 cur.execute(f"SELECT * FROM all_vacancies WHERE salary_from > {avg_salary} OR salary_to > {avg_salary}")
                 result = cur.fetchall()
-        #connect.close()
         return result
 
     def get_vacancies_with_keyword(self, keyword: str, connect=connect):
@@ -265,7 +293,6 @@ class DBManager:
                 cur.execute(f"SELECT * FROM all_vacancies "
                             f"WHERE name LIKE ('%{keyword.lower()}%') OR name LIKE ('%{keyword.capitalize()}%')")
                 result = cur.fetchall()
-        #connect.close()
         return result
 
     def get_count_of_all(self, connect=connect):
@@ -274,5 +301,4 @@ class DBManager:
             with connect.cursor() as cur:
                 cur.execute(f"SELECT COUNT(*) FROM all_vacancies")
                 result = cur.fetchall()
-        #connect.close()
         return result[0][0]
